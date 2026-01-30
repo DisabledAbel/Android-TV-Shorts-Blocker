@@ -111,4 +111,3 @@ MIT License - Feel free to modify and distribute.
 ---
 
 **Disclaimer**: This app is not affiliated with YouTube or Google. Use at your own risk. YouTube's UI changes may affect functionality.
-```
