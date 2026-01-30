@@ -66,8 +66,8 @@ jobs:
                 applicationId "com.example.shortsblocker"
                 minSdk 21
                 targetSdk 34
-                versionCode 1
-                versionName "1.0"
+                versionCode 2
+                versionName "2.0"
             }
             buildTypes {
                 release { minifyEnabled false }
@@ -80,6 +80,8 @@ jobs:
         }
         dependencies {
             implementation 'androidx.core:core-ktx:1.12.0'
+            implementation 'androidx.leanback:leanback:1.0.0'
+            implementation 'androidx.preference:preference-ktx:1.2.1'
         }
         EOF
         
@@ -93,7 +95,20 @@ jobs:
             <application
                 android:icon="@android:drawable/ic_lock_idle_lock"
                 android:label="ShortsBlocker"
-                android:theme="@android:style/Theme.NoDisplay">
+                android:theme="@style/Theme.Leanback"
+                android:banner="@android:drawable/ic_menu_preferences"
+                android:extractNativeLibs="false">
+                <activity
+                    android:name=".MainActivity"
+                    android:exported="true"
+                    android:label="ShortsBlocker"
+                    android:screenOrientation="landscape">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                        <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                    </intent-filter>
+                </activity>
                 <service
                     android:name=".ShortsBlockerService"
                     android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -113,7 +128,7 @@ jobs:
         cat > app/src/main/res/xml/service_config.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-            android:description="@android:string/ok"
+            android:description="@string/service_desc"
             android:packageNames="com.google.android.youtube.tv,com.google.android.youtube"
             android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
             android:accessibilityFlags="flagRetrieveInteractiveWindows"
@@ -125,13 +140,141 @@ jobs:
         cat > app/src/main/res/values/strings.xml << 'EOF'
         <resources>
             <string name="app_name">ShortsBlocker</string>
+            <string name="service_desc">Blocks YouTube Shorts when enabled</string>
+            <string name="blocking_on">Shorts Blocking: ON</string>
+            <string name="blocking_off">Shorts Blocking: OFF</string>
+            <string name="instructions">Toggle switch to enable/disable blocking</string>
         </resources>
+        EOF
+        
+    - run: |
+        cat > app/src/main/res/layout/activity_main.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="#1a1a1a"
+            android:padding="64dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ShortsBlocker"
+                android:textColor="#FF0000"
+                android:textSize="42sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="32dp"/>
+
+            <Switch
+                android:id="@+id/toggleSwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Block Shorts"
+                android:textColor="#FFFFFF"
+                android:textSize="28sp"
+                android:padding="24dp"
+                android:trackTint="#FF0000"
+                android:thumbTint="#FFFFFF"
+                android:layout_marginBottom="32dp"
+                android:focusable="true"
+                android:focusableInTouchMode="true"/>
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Status: OFF"
+                android:textColor="#888888"
+                android:textSize="24sp"
+                android:layout_marginBottom="48dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Note: Accessibility Service must remain enabled in system settings. This switch controls app behavior only."
+                android:textColor="#666666"
+                android:textSize="16sp"
+                android:gravity="center"
+                android:layout_marginTop="32dp"/>
+        </LinearLayout>
+        EOF
+        
+    - run: |
+        cat > app/src/main/java/com/example/shortsblocker/MainActivity.kt << 'EOF'
+        package com.example.shortsblocker
+        import android.app.Activity
+        import android.content.Context
+        import android.content.Intent
+        import android.os.Bundle
+        import android.provider.Settings
+        import android.widget.Switch
+        import android.widget.TextView
+        import android.widget.Toast
+        
+        class MainActivity : Activity() {
+            private lateinit var toggleSwitch: Switch
+            private lateinit var statusText: TextView
+            private val PREFS_NAME = "ShortsBlockerPrefs"
+            private val KEY_ENABLED = "blocking_enabled"
+            
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContentView(R.layout.activity_main)
+                
+                toggleSwitch = findViewById(R.id.toggleSwitch)
+                statusText = findViewById(R.id.statusText)
+                
+                // Load saved state
+                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val isEnabled = prefs.getBoolean(KEY_ENABLED, true)
+                
+                updateUI(isEnabled)
+                toggleSwitch.isChecked = isEnabled
+                
+                toggleSwitch.setOnCheckedChangeListener { _, isChecked ->
+                    prefs.edit().putBoolean(KEY_ENABLED, isChecked).apply()
+                    updateUI(isChecked)
+                    
+                    val msg = if (isChecked) "Shorts Blocking Enabled" else "Shorts Blocking Disabled"
+                    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+                }
+                
+                // Check if accessibility service is enabled
+                if (!isAccessibilityServiceEnabled()) {
+                    Toast.makeText(this, "Please enable Accessibility Service first", Toast.LENGTH_LONG).show()
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+            }
+            
+            private fun updateUI(enabled: Boolean) {
+                if (enabled) {
+                    statusText.text = getString(R.string.blocking_on)
+                    statusText.setTextColor(android.graphics.Color.GREEN)
+                    toggleSwitch.text = "Block Shorts: ON"
+                } else {
+                    statusText.text = getString(R.string.blocking_off)
+                    statusText.setTextColor(android.graphics.Color.GRAY)
+                    toggleSwitch.text = "Block Shorts: OFF"
+                }
+            }
+            
+            private fun isAccessibilityServiceEnabled(): Boolean {
+                val enabledServices = Settings.Secure.getString(
+                    contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                ) ?: return false
+                return enabledServices.contains(packageName)
+            }
+        }
         EOF
         
     - run: |
         cat > app/src/main/java/com/example/shortsblocker/ShortsBlockerService.kt << 'EOF'
         package com.example.shortsblocker
         import android.accessibilityservice.AccessibilityService
+        import android.content.Context
         import android.os.Handler
         import android.os.Looper
         import android.view.accessibility.AccessibilityEvent
@@ -141,13 +284,26 @@ jobs:
         class ShortsBlockerService : AccessibilityService() {
             private val handler = Handler(Looper.getMainLooper())
             private var lastBlock = 0L
+            private var toastShown = false
+            private val PREFS_NAME = "ShortsBlockerPrefs"
+            private val KEY_ENABLED = "blocking_enabled"
             
             override fun onServiceConnected() {
                 super.onServiceConnected()
-                showToast("Shorts Blocker Active")
             }
             
             override fun onAccessibilityEvent(event: AccessibilityEvent) {
+                // Check if blocking is enabled in preferences
+                if (!isBlockingEnabled()) {
+                    if (!toastShown) {
+                        // Optional: show toast once that service is running but disabled
+                        // showToast("Blocker Off - Shorts will play normally")
+                        toastShown = true
+                    }
+                    return
+                }
+                toastShown = false
+                
                 val pkg = event.packageName?.toString() ?: return
                 if (!pkg.contains("youtube")) return
                 if (System.currentTimeMillis() - lastBlock < 2000) return
@@ -158,6 +314,15 @@ jobs:
                         lastBlock = System.currentTimeMillis()
                     }
                     root.recycle()
+                }
+            }
+            
+            private fun isBlockingEnabled(): Boolean {
+                return try {
+                    applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .getBoolean(KEY_ENABLED, true)
+                } catch (e: Exception) {
+                    true // Default to enabled if error
                 }
             }
             
@@ -205,6 +370,6 @@ jobs:
       
     - uses: actions/upload-artifact@v4
       with:
-        name: ShortsBlocker-APK
+        name: ShortsBlocker-APK-v2
         path: app/build/outputs/apk/debug/app-debug.apk
         retention-days: 5
