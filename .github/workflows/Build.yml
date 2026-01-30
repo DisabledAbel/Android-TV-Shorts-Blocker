@@ -1,0 +1,183 @@
+name: Build APK
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    - run: |
+        mkdir -p app/src/main/java/com/example/shortsblocker
+        mkdir -p app/src/main/res/xml
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/values
+    - run: |
+        cat > build.gradle << 'EOF'
+        plugins {
+            id 'com.android.application' version '8.1.0' apply false
+            id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
+        }
+        EOF
+    - run: |
+        cat > settings.gradle << 'EOF'
+        pluginManagement {
+            repositories { google() ; mavenCentral() ; gradlePluginPortal() }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories { google() ; mavenCentral() }
+        }
+        rootProject.name = "ShortsBlockerTV"
+        include ':app'
+        EOF
+    - run: |
+        cat > app/build.gradle << 'EOF'
+        plugins {
+            id 'com.android.application'
+            id 'org.jetbrains.kotlin.android'
+        }
+        android {
+            namespace 'com.example.shortsblocker'
+            compileSdk 34
+            defaultConfig {
+                applicationId "com.example.shortsblocker"
+                minSdk 21
+                targetSdk 34
+                versionCode 1
+                versionName "1.0"
+            }
+            buildTypes {
+                release { minifyEnabled false }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_1_8
+                targetCompatibility JavaVersion.VERSION_1_8
+            }
+            kotlinOptions { jvmTarget = '1.8' }
+        }
+        dependencies {
+            implementation 'androidx.core:core-ktx:1.12.0'
+        }
+        EOF
+    - run: |
+        cat > app/src/main/AndroidManifest.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
+            <uses-feature android:name="android.software.leanback" android:required="false" />
+            <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+            <application
+                android:icon="@android:drawable/ic_lock_idle_lock"
+                android:label="ShortsBlocker"
+                android:theme="@android:style/Theme.NoDisplay">
+                <service
+                    android:name=".ShortsBlockerService"
+                    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+                    android:exported="true">
+                    <intent-filter>
+                        <action android:name="android.accessibilityservice.AccessibilityService" />
+                    </intent-filter>
+                    <meta-data
+                        android:name="android.accessibilityservice"
+                        android:resource="@xml/service_config" />
+                </service>
+            </application>
+        </manifest>
+        EOF
+    - run: |
+        cat > app/src/main/res/xml/service_config.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+            android:description="@android:string/ok"
+            android:packageNames="com.google.android.youtube.tv,com.google.android.youtube"
+            android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+            android:accessibilityFlags="flagRetrieveInteractiveWindows"
+            android:canRetrieveWindowContent="true"
+            android:notificationTimeout="100" />
+        EOF
+    - run: |
+        cat > app/src/main/java/com/example/shortsblocker/ShortsBlockerService.kt << 'EOF'
+        package com.example.shortsblocker
+        import android.accessibilityservice.AccessibilityService
+        import android.os.Handler
+        import android.os.Looper
+        import android.view.accessibility.AccessibilityEvent
+        import android.view.accessibility.AccessibilityNodeInfo
+        import android.widget.Toast
+        
+        class ShortsBlockerService : AccessibilityService() {
+            private val handler = Handler(Looper.getMainLooper())
+            private var lastBlock = 0L
+            
+            override fun onServiceConnected() {
+                super.onServiceConnected()
+                showToast("Shorts Blocker Active")
+            }
+            
+            override fun onAccessibilityEvent(event: AccessibilityEvent) {
+                val pkg = event.packageName?.toString() ?: return
+                if (!pkg.contains("youtube")) return
+                if (System.currentTimeMillis() - lastBlock < 2000) return
+                
+                rootInActiveWindow?.let { root ->
+                    if (detectShorts(root)) {
+                        blockShorts()
+                        lastBlock = System.currentTimeMillis()
+                    }
+                    root.recycle()
+                }
+            }
+            
+            private fun detectShorts(node: AccessibilityNodeInfo): Boolean {
+                val queue = ArrayDeque<AccessibilityNodeInfo>()
+                queue.add(node)
+                var depth = 0
+                while (queue.isNotEmpty() && depth < 15) {
+                    val n = queue.removeFirst()
+                    val id = n.viewIdResourceName?.lowercase() ?: ""
+                    val desc = n.contentDescription?.toString()?.lowercase() ?: ""
+                    val cls = n.className?.toString()?.lowercase() ?: ""
+                    
+                    if (id.contains("short") || id.contains("reel") || 
+                        desc.contains("shorts") || cls.contains("reel")) {
+                        return true
+                    }
+                    for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+                    depth++
+                }
+                return false
+            }
+            
+            private fun blockShorts() {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                handler.postDelayed({
+                    rootInActiveWindow?.let {
+                        if (detectShorts(it)) performGlobalAction(GLOBAL_ACTION_HOME)
+                        it.recycle()
+                    }
+                }, 500)
+                showToast("Shorts Blocked")
+            }
+            
+            private fun showToast(msg: String) {
+                handler.post { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
+            }
+            
+            override fun onInterrupt() {}
+        }
+        EOF
+    - run: chmod +x gradlew || echo "No gradlew"
+    - run: |
+        mkdir -p gradle/wrapper
+        echo 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-bin.zip' > gradle/wrapper/gradle-wrapper.properties
+    - uses: gradle/gradle-build-action@v2
+      with:
+        gradle-version: 8.0
+    - run: gradle assembleDebug || ./gradlew assembleDebug
+    - uses: actions/upload-artifact@v3
+      with:
+        name: ShortsBlocker-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
