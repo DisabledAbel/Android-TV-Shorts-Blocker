@@ -5,15 +5,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    
     - uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
+        
+    - uses: android-actions/setup-android@v3
+      
+    - uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: "8.0.2"
+        
     - run: |
         mkdir -p app/src/main/java/com/example/shortsblocker
         mkdir -p app/src/main/res/xml
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
+        
     - run: |
         cat > build.gradle << 'EOF'
         plugins {
@@ -21,6 +30,7 @@ jobs:
             id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
         }
         EOF
+        
     - run: |
         cat > settings.gradle << 'EOF'
         pluginManagement {
@@ -33,6 +43,7 @@ jobs:
         rootProject.name = "ShortsBlockerTV"
         include ':app'
         EOF
+        
     - run: |
         cat > app/build.gradle << 'EOF'
         plugins {
@@ -62,6 +73,7 @@ jobs:
             implementation 'androidx.core:core-ktx:1.12.0'
         }
         EOF
+        
     - run: |
         cat > app/src/main/AndroidManifest.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
@@ -87,6 +99,7 @@ jobs:
             </application>
         </manifest>
         EOF
+        
     - run: |
         cat > app/src/main/res/xml/service_config.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
@@ -98,6 +111,14 @@ jobs:
             android:canRetrieveWindowContent="true"
             android:notificationTimeout="100" />
         EOF
+        
+    - run: |
+        cat > app/src/main/res/values/strings.xml << 'EOF'
+        <resources>
+            <string name="app_name">ShortsBlocker</string>
+        </resources>
+        EOF
+        
     - run: |
         cat > app/src/main/java/com/example/shortsblocker/ShortsBlockerService.kt << 'EOF'
         package com.example.shortsblocker
@@ -169,14 +190,10 @@ jobs:
             override fun onInterrupt() {}
         }
         EOF
-    - run: chmod +x gradlew || echo "No gradlew"
-    - run: |
-        mkdir -p gradle/wrapper
-        echo 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-bin.zip' > gradle/wrapper/gradle-wrapper.properties
-    - uses: gradle/gradle-build-action@v3
-      with:
-        gradle-version: 8.0
-    - run: gradle assembleDebug || ./gradlew assembleDebug
+        
+    - run: gradle wrapper
+    - run: ./gradlew assembleDebug
+      
     - uses: actions/upload-artifact@v4
       with:
         name: ShortsBlocker-APK
