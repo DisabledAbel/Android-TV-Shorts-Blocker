@@ -67,9 +67,6 @@ jobs:
                 debug {
                     debuggable true
                 }
-                release {
-                    minifyEnabled false
-                }
             }
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_1_8
@@ -90,7 +87,6 @@ jobs:
             <uses-feature android:name="android.software.leanback" android:required="false" />
             <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
             <application
-                android:allowBackup="true"
                 android:icon="@android:drawable/ic_menu_close_clear_cancel"
                 android:label="ShortsBlocker"
                 android:theme="@android:style/Theme.NoDisplay">
@@ -194,12 +190,16 @@ jobs:
         }
         EOF
         
-    - run: |
-        chmod +x gradlew || true
-        ./gradlew clean
-        ./gradlew assembleDebug
+    - name: Setup Gradle Wrapper
+      run: |
+        gradle wrapper --gradle-version 8.0.2
         
-    - run: ls -lh app/build/outputs/apk/debug/
+    - name: Build APK
+      run: |
+        ./gradlew clean assembleDebug
+        
+    - name: Check Output
+      run: ls -lh app/build/outputs/apk/debug/
       
     - uses: actions/upload-artifact@v4
       with:
