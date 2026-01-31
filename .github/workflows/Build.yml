@@ -17,6 +17,7 @@ jobs:
         mkdir -p app/src/main/java/com/shortsblocker/tv
         mkdir -p app/src/main/res/xml
         mkdir -p app/src/main/res/values
+        mkdir -p gradle/wrapper
         
     - run: |
         cat > gradle.properties << 'EOF'
@@ -29,8 +30,8 @@ jobs:
     - run: |
         cat > build.gradle << 'EOF'
         plugins {
-            id 'com.android.application' version '8.0.2' apply false
-            id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
+            id 'com.android.application' version '7.4.2' apply false
+            id 'org.jetbrains.kotlin.android' version '1.8.20' apply false
         }
         EOF
         
@@ -45,6 +46,16 @@ jobs:
         }
         rootProject.name = "ShortsBlocker"
         include ':app'
+        EOF
+        
+    - run: |
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-bin.zip
+        networkTimeout=10000
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
         EOF
         
     - run: |
@@ -190,16 +201,14 @@ jobs:
         }
         EOF
         
-    - name: Setup Gradle Wrapper
-      run: |
-        gradle wrapper --gradle-version 8.0.2
+    - run: |
+        curl -L -o gradlew https://raw.githubusercontent.com/gradle/gradle/v7.5.0/gradle/wrapper/gradlew
+        chmod +x gradlew
         
-    - name: Build APK
-      run: |
+    - run: |
         ./gradlew clean assembleDebug
         
-    - name: Check Output
-      run: ls -lh app/build/outputs/apk/debug/
+    - run: ls -lh app/build/outputs/apk/debug/
       
     - uses: actions/upload-artifact@v4
       with:
